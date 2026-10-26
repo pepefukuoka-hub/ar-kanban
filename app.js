@@ -95,12 +95,12 @@
     try {
       const h = await getHere();
       signs.push({
-        id: newId(), name: 'テスト看板', lat: h.lat + 10 / 110540, lng: h.lng,
-        access: 'この場所から北へ約10m。', description: 'AR画面で、この看板が見えるか確かめるためのテストです。',
+        id: newId(), name: 'テスト看板', lat: h.lat + 5 / 110540, lng: h.lng,
+        access: 'この場所から北へ約5m。', description: 'AR画面で、この看板が見えるか確かめるためのテストです。',
         height: 2, createdAt: new Date().toISOString()
       });
       save(); renderList();
-      listMsg('北へ約10mの位置にテスト看板を作りました。「ARで見る」で確認してください。');
+      listMsg('北へ約5mの位置にテスト看板を作りました。「ARで見る」で確認してください。');
     } catch (e) { listMsg(geoMessage(e)); }
   }
 
@@ -260,7 +260,7 @@
         const d = this._cp.distanceTo(this._p);
         this.el.object3D.lookAt(this._cp);
         // 遠くでも読めるように、距離に応じて大きくする(12m までは等倍)
-        this.el.object3D.scale.setScalar(Math.min(80, Math.max(1, d / 12)));
+        this.el.object3D.scale.setScalar(Math.min(80, Math.max(0.25, d / 12)));
       }
     });
   }
