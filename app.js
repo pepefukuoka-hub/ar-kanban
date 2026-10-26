@@ -7,6 +7,7 @@
   let editing = null;        // 編集中の看板(新規は null)
   let map = null, pin = null;
   let arStarted = false;
+  let camEl = null;          // ARのカメラ(向きの補正と診断に使う)
 
   // ---------- データ ----------
   function load() {
@@ -212,7 +213,52 @@
   }
 
   function registerComponents() {
+    // AR.js 3.4.5 のスマホ用の向き処理は、THREEx.DeviceOrientationControls を探すが、ビルドに含まれず必ずエラーになる。
+    // そのため、同じ役割の部品をここで用意する(three.js の DeviceOrientationControls と同じ計算)。
+    window.THREEx = window.THREEx || {};
+    if (!window.THREEx.DeviceOrientationControls) {
+      window.THREEx.DeviceOrientationControls = function (object) {
+        const me = this;
+        this.object = object;
+        this.object.rotation.reorder('YXZ');
+        this.enabled = true;
+        this.deviceOrientation = null;
+        this.screenOrientation = 0;
+        this.alphaOffset = 0;        // iPhoneのコンパス補正に使う(ラジアン)
+        this.smoothingFactor = 1;
+        const eventName = 'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
+        const onDevice = (e) => { me.deviceOrientation = e; };
+        const onScreen = () => { me.screenOrientation = window.orientation || 0; };
+        const zee = new THREE.Vector3(0, 0, 1), euler = new THREE.Euler(), q0 = new THREE.Quaternion();
+        const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));   // 端末の上を、カメラの前に合わせる
+        this.connect = function () { onScreen(); window.addEventListener('orientationchange', onScreen); window.addEventListener(eventName, onDevice); me.enabled = true; };
+        this.disconnect = function () { window.removeEventListener('orientationchange', onScreen); window.removeEventListener(eventName, onDevice); me.enabled = false; };
+        this.update = function () {
+          const d = me.deviceOrientation;
+          if (!me.enabled || !d) return;
+          const rad = THREE.MathUtils.degToRad;
+          const alpha = rad(d.alpha || 0) + me.alphaOffset;
+          const beta = d.beta ? rad(d.beta) : 0, gamma = d.gamma ? rad(d.gamma) : 0;
+          const orient = me.screenOrientation ? rad(me.screenOrientation) : 0;
+          euler.set(beta, alpha, -gamma, 'YXZ');
+          me.object.quaternion.setFromEuler(euler);
+          me.object.quaternion.multiply(q1);
+          me.object.quaternion.multiply(q0.setFromAxisAngle(zee, -orient));
+        };
+        this.connect();
+      };
+    }
     // A-Frameの標準の文字表示は日本語に対応しないため、看板の文字は画像にして貼る
+    // キャラクターは、水平方向だけ見ている人の方を向く
+    AFRAME.registerComponent('face-yaw', {
+      init: function () { this._cp = new THREE.Vector3(); this._p = new THREE.Vector3(); },
+      tick: function () {
+        const cam = this.el.sceneEl.camera;
+        if (!cam) return;
+        cam.getWorldPosition(this._cp); this.el.object3D.getWorldPosition(this._p);
+        this.el.object3D.rotation.y = Math.atan2(this._cp.x - this._p.x, this._cp.z - this._p.z);
+      }
+    });
     AFRAME.registerComponent('sign-card', {
       schema: { name: { type: 'string' }, w: { default: 9 }, h: { default: 2.8 } },
       init: function () {
@@ -265,6 +311,31 @@
     });
   }
 
+  function el(tag, attrs, parent) {
+    const e = document.createElement(tag);
+    Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k]));
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  // 丸いキャラクター。身長 約1.8m。顔はいつも見ている人の方を向く
+  function makeCharacter(color, label) {
+    const root = el('a-entity', { 'face-yaw': '' });
+    el('a-sphere', { radius: 0.55, color, position: '0 0.55 0', scale: '1 1.05 1' }, root);                    // からだ
+    el('a-sphere', { radius: 0.42, color, position: '0 1.4 0' }, root);                                         // あたま
+    el('a-cone', { 'radius-bottom': 0.14, 'radius-top': 0, height: 0.3, color, position: '-0.26 1.85 0' }, root); // みみ
+    el('a-cone', { 'radius-bottom': 0.14, 'radius-top': 0, height: 0.3, color, position: '0.26 1.85 0' }, root);
+    [-0.15, 0.15].forEach((x) => {
+      el('a-sphere', { radius: 0.09, color: '#ffffff', position: x + ' 1.45 0.34' }, root);                     // め
+      el('a-sphere', { radius: 0.045, color: '#111111', position: x + ' 1.45 0.42' }, root);
+    });
+    el('a-sphere', { radius: 0.07, color: '#ff7a7a', position: '0 1.32 0.4' }, root);                           // はな
+    el('a-sphere', { radius: 0.17, color, position: '-0.55 0.65 0' }, root);                                    // て
+    el('a-sphere', { radius: 0.17, color, position: '0.55 0.65 0' }, root);
+    const lab = el('a-entity', { position: '0 2.5 0', 'sign-card': 'name: ' + label + '; w: 4.5; h: 1.3' }, root);
+    lab.classList.add('clickable');
+    return { root, lab };
+  }
+
   function arFail(msg) { $('arMsg').textContent = msg; $('arGo').disabled = false; }
 
   async function startAR() {
@@ -291,7 +362,8 @@
 
     const radius = parseInt($('radius').value, 10);
     const near = signs.filter((s) => !radius || dist(here, s) <= radius);
-    if (!near.length) { arFail(signs.length ? 'この範囲に看板がありません。範囲を広げるか、看板を作ってください。' : '看板がありません。先に看板を作ってください。'); return; }
+    const withChars = $('testChars').checked;
+    if (!near.length && !withChars) { arFail(signs.length ? 'この範囲に看板がありません。範囲を広げるか、看板を作ってください。' : '看板がありません。先に看板を作ってください。'); return; }
 
     $('arMsg').textContent = 'ARを準備しています…';
     try {
@@ -325,6 +397,24 @@
       place.appendChild(card);
       scene.appendChild(place);
     });
+    if (withChars) {
+      const mLng = 111320 * Math.cos(here.lat * Math.PI / 180), D = 6;   // 6m 先の東西南北
+      [['北', 0, 1, '#ff8a3d'], ['東', 1, 0, '#4cc9f0'], ['南', 0, -1, '#8ac926'], ['西', -1, 0, '#c77dff']].forEach(([name, dx, dy, color]) => {
+        const place = document.createElement('a-entity');
+        place.setAttribute('gps-new-entity-place', 'latitude: ' + (here.lat + dy * D / 110540) + '; longitude: ' + (here.lng + dx * D / mLng));
+        const c = makeCharacter(color, 'クローズ君(' + name + ')');
+        c.lab.addEventListener('click', () => {
+          $('infoName').textContent = 'クローズ君(' + name + ')';
+          $('infoDist').textContent = '';
+          $('infoAccess').textContent = '現在地から ' + name + ' へ 約' + D + ' m の位置に置いたテスト用のキャラクターです。';
+          $('infoDesc').textContent = 'AR表示を確かめるためのものです。';
+          $('arInfo').hidden = false;
+        });
+        place.appendChild(c.root);
+        scene.appendChild(place);
+      });
+    }
+    camEl = cam;
     $('arHost').appendChild(scene);
     $('arHud').hidden = false;
     watchHere(near);
@@ -341,11 +431,33 @@
   $('arExit').onclick = () => { location.reload(); };   // カメラを確実に止めるため、ページを開き直す
 
   // 向き(北=0°)。iPhoneは webkitCompassHeading、Androidは絶対方位の alpha から求める
-  let compass = null;
+  let compass = null, oriCount = 0, calibrated = false;
+  // iPhoneの alpha は北基準ではないため、コンパスの方位に合わせて AR の向きを補正する(AndroidはOSが北基準で渡す)
+  function calibrate(e) {
+    const comp = camEl && camEl.components && camEl.components['arjs-device-orientation-controls'];
+    const oc = comp && comp._orientationControls;
+    if (!oc || typeof e.alpha !== 'number') return;
+    const target = -e.webkitCompassHeading - e.alpha;                 // 度
+    const cur = oc.alphaOffset * 180 / Math.PI;
+    const diff = ((target - cur + 540) % 360) - 180;
+    if (!calibrated || Math.abs(diff) > 4) {
+      oc.alphaOffset = (cur + (calibrated ? diff * 0.3 : diff)) * Math.PI / 180;
+      calibrated = true;
+    }
+  }
+  function arYaw() {                                                    // ARのカメラが向いている方位(北=0°)
+    const cam = document.querySelector('a-scene') && document.querySelector('a-scene').camera;
+    if (!cam || !window.THREE) return null;
+    const d = new THREE.Vector3(); cam.getWorldDirection(d);
+    return (Math.atan2(d.x, -d.z) * 180 / Math.PI + 360) % 360;
+  }
   function startCompass() {
     const onOri = (e) => {
-      if (typeof e.webkitCompassHeading === 'number') compass = e.webkitCompassHeading;
-      else if (e.absolute && typeof e.alpha === 'number') compass = (360 - e.alpha) % 360;
+      oriCount++;
+      if (typeof e.webkitCompassHeading === 'number') {
+        compass = e.webkitCompassHeading;
+        calibrate(e);
+      } else if (e.absolute && typeof e.alpha === 'number') compass = (360 - e.alpha) % 360;
     };
     window.addEventListener('deviceorientationabsolute', onOri, true);
     window.addEventListener('deviceorientation', onOri, true);
@@ -378,6 +490,9 @@
           lines.push('向き ' + Math.round(compass) + '° / 看板は ' + Math.round(b) + '° の方向 → ' + (Math.abs(rel) < 20 ? '正面です' : (rel > 0 ? '右へ ' : '左へ ') + Math.round(Math.abs(rel)) + '° 回す'));
         }
       }
+      const v = document.querySelector('video');
+      const yaw = arYaw();
+      lines.push('診断: 映像 ' + (v ? v.videoWidth + '×' + v.videoHeight : 'なし') + ' / 向きイベント ' + oriCount + ' 回 / ARの向き ' + (yaw == null ? '-' : Math.round(yaw) + '°') + (calibrated ? ' / コンパス補正あり' : ''));
       lines.push('GPS 精度 約' + Math.round(here.acc) + ' m' + (here.acc > 100 ? '(悪いため、ARが位置を更新しません)' : ''));
       $('arNearest').textContent = lines.join('\n');
     };
