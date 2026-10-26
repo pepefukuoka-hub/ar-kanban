@@ -380,7 +380,7 @@
     scene.setAttribute('arjs', 'sourceType: webcam; videoTexture: true; debugUIEnabled: false');
     scene.setAttribute('renderer', 'antialias: true; alpha: true');
     const cam = document.createElement('a-camera');
-    cam.setAttribute('gps-new-camera', 'gpsMinDistance: 3');
+    cam.setAttribute('gps-new-camera', 'gpsMinDistance: 8');
     cam.setAttribute('cursor', 'rayOrigin: mouse');
     cam.setAttribute('raycaster', 'objects: .clickable; far: 100000');
     scene.appendChild(cam);
