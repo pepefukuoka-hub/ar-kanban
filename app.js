@@ -259,6 +259,16 @@
         this.el.object3D.rotation.y = Math.atan2(this._cp.x - this._p.x, this._cp.z - this._p.z);
       }
     });
+    // 人物の写真を貼った板。足元が地面。いつも見ている人の方を向く(face-yaw と併用)
+    AFRAME.registerComponent('photo-figure', {
+      schema: { h: { default: 1.7 } },
+      init: function () {
+        const c = personCanvas, tex = new THREE.CanvasTexture(c);
+        const w = this.data.h * c.width / c.height;
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, toneMapped: false });
+        this.el.setObject3D('mesh', new THREE.Mesh(new THREE.PlaneGeometry(w, this.data.h), mat));
+      }
+    });
     AFRAME.registerComponent('sign-card', {
       schema: { name: { type: 'string' }, w: { default: 9 }, h: { default: 2.8 } },
       init: function () {
@@ -336,6 +346,58 @@
     return { root, lab };
   }
 
+  // ---------- 人物の写真(背景を切り抜いた透明PNG) ----------
+  const PERSON_KEY = 'ar.person.v1';
+  let personCanvas = null;
+  function loadImage(src) {
+    return new Promise((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = reject; im.src = src; });
+  }
+  // 縮小して、縁の白いにじみを内側に削る
+  function processPerson(im) {
+    const H = Math.min(1024, im.naturalHeight), W = Math.round(im.naturalWidth * H / im.naturalHeight);
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H), a = d.data;
+    for (let pass = 0; pass < 2; pass++) {
+      const cut = [];
+      for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+        const i = (y * W + x) * 4 + 3;
+        if (a[i] > 0 && (a[i - 4] < 128 || a[i + 4] < 128 || a[i - W * 4] < 128 || a[i + W * 4] < 128)) cut.push(i);
+      }
+      cut.forEach((i) => { a[i] = 0; });
+    }
+    g.putImageData(d, 0, 0);
+    return c;
+  }
+  async function setPersonFromFile(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      personCanvas = processPerson(await loadImage(url));
+      try { localStorage.setItem(PERSON_KEY, personCanvas.toDataURL('image/png')); $('personMsg').textContent = '写真を読み込みました。この端末の中にだけ保存されます。'; }
+      catch (e) { $('personMsg').textContent = '写真を読み込みました(容量が足りず、保存はできませんでした。今回だけ使えます)。'; }
+      $('personOn').checked = true;
+    } catch (e) { $('personMsg').textContent = '写真を読み込めませんでした。PNGの画像を選んでください。'; }
+    URL.revokeObjectURL(url);
+  }
+  async function restorePerson() {
+    try {
+      const v = localStorage.getItem(PERSON_KEY);
+      if (!v) return;
+      const im = await loadImage(v);
+      const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      c.getContext('2d').drawImage(im, 0, 0);
+      personCanvas = c;
+      $('personMsg').textContent = '保存した写真があります。';
+      $('personOn').checked = true;
+    } catch (e) {}
+  }
+  $('personFile').onchange = (e) => { const f = e.target.files[0]; if (f) setPersonFromFile(f); };
+  $('personClear').onclick = () => {
+    personCanvas = null; $('personOn').checked = false;
+    try { localStorage.removeItem(PERSON_KEY); } catch (e) {}
+    $('personMsg').textContent = '保存した写真を消しました。';
+  };
+
   function arFail(msg) { $('arMsg').textContent = msg; $('arGo').disabled = false; }
 
   async function startAR() {
@@ -363,7 +425,8 @@
     const radius = parseInt($('radius').value, 10);
     const near = signs.filter((s) => !radius || dist(here, s) <= radius);
     const withChars = $('testChars').checked;
-    if (!near.length && !withChars) { arFail(signs.length ? 'この範囲に看板がありません。範囲を広げるか、看板を作ってください。' : '看板がありません。先に看板を作ってください。'); return; }
+    const withPerson = $('personOn').checked && personCanvas;
+    if (!near.length && !withChars && !withPerson) { arFail(signs.length ? 'この範囲に看板がありません。範囲を広げるか、看板を作ってください。' : '看板がありません。先に看板を作ってください。'); return; }
 
     $('arMsg').textContent = 'ARを準備しています…';
     try {
@@ -413,6 +476,18 @@
         place.appendChild(c.root);
         scene.appendChild(place);
       });
+    }
+    if ($('personOn').checked && personCanvas) {
+      const D = parseFloat($('personDist').value), B = parseFloat($('personDir').value) * Math.PI / 180, H = parseFloat($('personH').value);
+      const mLng2 = 111320 * Math.cos(here.lat * Math.PI / 180);
+      const place = document.createElement('a-entity');
+      place.setAttribute('gps-new-entity-place', 'latitude: ' + (here.lat + Math.cos(B) * D / 110540) + '; longitude: ' + (here.lng + Math.sin(B) * D / mLng2));
+      const fig = document.createElement('a-entity');
+      fig.setAttribute('position', '0 ' + (H / 2) + ' 0');
+      fig.setAttribute('face-yaw', '');
+      fig.setAttribute('photo-figure', 'h: ' + H);
+      place.appendChild(fig);
+      scene.appendChild(place);
     }
     camEl = cam;
     $('arHost').appendChild(scene);
@@ -506,4 +581,5 @@
   $('arGo').onclick = startAR;
 
   renderList();
+  restorePerson();
 })();
