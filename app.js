@@ -375,7 +375,7 @@
       personCanvas = processPerson(await loadImage(url));
       try { localStorage.setItem(PERSON_KEY, personCanvas.toDataURL('image/png')); $('personMsg').textContent = '写真を読み込みました。この端末の中にだけ保存されます。'; }
       catch (e) { $('personMsg').textContent = '写真を読み込みました(容量が足りず、保存はできませんでした。今回だけ使えます)。'; }
-      $('personOn').checked = true;
+      $('personOn').checked = true; $('testChars').checked = false;
     } catch (e) { $('personMsg').textContent = '写真を読み込めませんでした。PNGの画像を選んでください。'; }
     URL.revokeObjectURL(url);
   }
@@ -387,10 +387,12 @@
       const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
       c.getContext('2d').drawImage(im, 0, 0);
       personCanvas = c;
-      $('personMsg').textContent = '保存した写真があります。';
-      $('personOn').checked = true;
+      $('personMsg').textContent = '保存した写真があります。東西南北に1枚ずつ置きます。';
+      $('personOn').checked = true; $('testChars').checked = false;   // 重なるため、キャラクターは外す(必要ならチェックを入れ直す)
     } catch (e) {}
   }
+  $('personMode').onchange = () => { $('personDir').disabled = $('personMode').value === 'ring'; };
+  $('personDir').disabled = true;
   $('personFile').onchange = (e) => { const f = e.target.files[0]; if (f) setPersonFromFile(f); };
   $('personClear').onclick = () => {
     personCanvas = null; $('personOn').checked = false;
@@ -478,16 +480,21 @@
       });
     }
     if ($('personOn').checked && personCanvas) {
-      const D = parseFloat($('personDist').value), B = parseFloat($('personDir').value) * Math.PI / 180, H = parseFloat($('personH').value);
+      // 東西南北に1枚ずつ(または、選んだ向きに1枚)。足元は地面
+      const D = parseFloat($('personDist').value), H = parseFloat($('personH').value);
       const mLng2 = 111320 * Math.cos(here.lat * Math.PI / 180);
-      const place = document.createElement('a-entity');
-      place.setAttribute('gps-new-entity-place', 'latitude: ' + (here.lat + Math.cos(B) * D / 110540) + '; longitude: ' + (here.lng + Math.sin(B) * D / mLng2));
-      const fig = document.createElement('a-entity');
-      fig.setAttribute('position', '0 ' + (H / 2) + ' 0');
-      fig.setAttribute('face-yaw', '');
-      fig.setAttribute('photo-figure', 'h: ' + H);
-      place.appendChild(fig);
-      scene.appendChild(place);
+      const dirs = $('personMode').value === 'ring' ? [0, 90, 180, 270] : [parseFloat($('personDir').value)];
+      dirs.forEach((deg) => {
+        const B = deg * Math.PI / 180;
+        const place = document.createElement('a-entity');
+        place.setAttribute('gps-new-entity-place', 'latitude: ' + (here.lat + Math.cos(B) * D / 110540) + '; longitude: ' + (here.lng + Math.sin(B) * D / mLng2));
+        const fig = document.createElement('a-entity');
+        fig.setAttribute('position', '0 ' + (H / 2) + ' 0');
+        fig.setAttribute('face-yaw', '');
+        fig.setAttribute('photo-figure', 'h: ' + H);
+        place.appendChild(fig);
+        scene.appendChild(place);
+      });
     }
     camEl = cam;
     $('arHost').appendChild(scene);

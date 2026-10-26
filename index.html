@@ -72,9 +72,10 @@
     <label for="personFile" class="help">人物の写真(背景を切り抜いた透明のPNG)</label>
     <input type="file" id="personFile" accept="image/png,image/*">
     <div class="row">
-      <select id="personDir" aria-label="置く向き"><option value="0">北</option><option value="45" selected>北東</option><option value="90">東</option><option value="135">南東</option><option value="180">南</option><option value="225">南西</option><option value="270">西</option><option value="315">北西</option></select>
+      <select id="personMode" aria-label="置き方"><option value="ring" selected>東西南北に1枚ずつ</option><option value="one">1枚だけ</option></select>
+      <select id="personDir" aria-label="1枚だけのときの向き"><option value="0">北</option><option value="45" selected>北東</option><option value="90">東</option><option value="135">南東</option><option value="180">南</option><option value="225">南西</option><option value="270">西</option><option value="315">北西</option></select>
       <select id="personDist" aria-label="置く距離"><option value="5">5 m先</option><option value="8" selected>8 m先</option><option value="12">12 m先</option></select>
-      <select id="personH" aria-label="身長"><option value="1.6">身長 1.6 m</option><option value="1.7" selected>身長 1.7 m</option><option value="1.8">身長 1.8 m</option></select>
+      <select id="personH" aria-label="表示する高さ"><option value="1.7">高さ 1.7 m(実物大)</option><option value="3" selected>高さ 3 m</option><option value="5">高さ 5 m</option><option value="8">高さ 8 m</option></select>
     </div>
     <label class="help"><input type="checkbox" id="personOn"> 人物を置く</label>
     <p class="help" id="personMsg">写真は、この端末の中にだけ保存されます(公開されません)。</p>
