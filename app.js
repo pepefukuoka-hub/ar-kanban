@@ -340,7 +340,25 @@
   $('infoClose').onclick = () => { $('arInfo').hidden = true; };
   $('arExit').onclick = () => { location.reload(); };   // カメラを確実に止めるため、ページを開き直す
 
+  // 向き(北=0°)。iPhoneは webkitCompassHeading、Androidは絶対方位の alpha から求める
+  let compass = null;
+  function startCompass() {
+    const onOri = (e) => {
+      if (typeof e.webkitCompassHeading === 'number') compass = e.webkitCompassHeading;
+      else if (e.absolute && typeof e.alpha === 'number') compass = (360 - e.alpha) % 360;
+    };
+    window.addEventListener('deviceorientationabsolute', onOri, true);
+    window.addEventListener('deviceorientation', onOri, true);
+  }
+  function bearing(a, b) {
+    const r = Math.PI / 180;
+    const y = Math.sin((b.lng - a.lng) * r) * Math.cos(b.lat * r);
+    const x = Math.cos(a.lat * r) * Math.sin(b.lat * r) - Math.sin(a.lat * r) * Math.cos(b.lat * r) * Math.cos((b.lng - a.lng) * r);
+    return (Math.atan2(y, x) / r + 360) % 360;
+  }
+
   function watchHere(near) {
+    startCompass();
     const update = () => {
       let best = null, bd = Infinity;
       near.forEach((s) => {
@@ -348,11 +366,23 @@
         if (d < bd) { bd = d; best = s; }
         const el = Array.from(document.querySelectorAll('.clickable')).find((e) => e.dataset.id === s.id);
         const comp = el && el.components && el.components['sign-card'];
-        if (comp) comp.setDistance(d);
+        if (comp && comp.canvas) comp.setDistance(d);   // 準備前の看板には触らない
       });
-      $('arNearest').textContent = best ? 'いちばん近い: ' + best.name + ' ' + fmt(bd) : '';
+      const lines = [];
+      if (best) {
+        lines.push('いちばん近い: ' + best.name + ' ' + fmt(bd));
+        const b = bearing(here, best);
+        if (compass == null) lines.push('コンパス: 値が取れていません(向きが合わない原因になります)');
+        else {
+          const rel = ((b - compass + 540) % 360) - 180;
+          lines.push('向き ' + Math.round(compass) + '° / 看板は ' + Math.round(b) + '° の方向 → ' + (Math.abs(rel) < 20 ? '正面です' : (rel > 0 ? '右へ ' : '左へ ') + Math.round(Math.abs(rel)) + '° 回す'));
+        }
+      }
+      lines.push('GPS 精度 約' + Math.round(here.acc) + ' m' + (here.acc > 100 ? '(悪いため、ARが位置を更新しません)' : ''));
+      $('arNearest').textContent = lines.join('\n');
     };
     update();
+    setInterval(update, 1000);   // 向きの表示を更新する
     navigator.geolocation.watchPosition((p) => {
       here = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy };
       update();

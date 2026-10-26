@@ -68,7 +68,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 #arHud { position: fixed; z-index: 10000; left: 0; right: 0; top: 0; display: flex; gap: 8px; align-items: flex-start;
   padding: max(10px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px)); pointer-events: none; }
 #arHud > * { pointer-events: auto; }
-#arNearest { background: rgba(20,24,28,.8); color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 14px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#arNearest { white-space: pre-line; background: rgba(20,24,28,.8); color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 14px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
 #arExit { background: rgba(20,24,28,.8); color: #fff; border-color: transparent; }
 #arInfo { position: fixed; z-index: 10001; left: 0; right: 0; bottom: 0; background: var(--surface); color: var(--fg);
   border-radius: 16px 16px 0 0; box-shadow: 0 -6px 24px rgba(0,0,0,.35); max-height: 70vh; overflow-y: auto;
